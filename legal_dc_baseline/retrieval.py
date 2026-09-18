@@ -1,8 +1,6 @@
-#/legal_dc_baseline/retrieval.py
 """Dense + lexical candidate retrieval and cross-encoder reranking."""
 
 import re
-
 import numpy as np
 from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder, SentenceTransformer
@@ -55,6 +53,8 @@ class HybridRetriever:
 
     def retrieve(self, query: str) -> list[dict]:
         """Merge candidates by text identity, then return the top reranked passages."""
+        RELEVANCE_THRESHOLD = 0.05  # Threshold for bge-reranker-base
+        
         candidate_indices = self._bm25_candidates(query) + self._dense_candidates(query)
         seen_texts: set[str] = set()
         candidates: list[Chunk] = []
@@ -66,6 +66,11 @@ class HybridRetriever:
 
         scores = self.reranker.predict([(query, chunk.text) for chunk in candidates])
         ranked = sorted(zip(candidates, scores), key=lambda item: float(item[1]), reverse=True)[: self.final_k]
+        
+        # Filter out out-of-domain / irrelevant queries
+        if not ranked or float(ranked[0][1]) < RELEVANCE_THRESHOLD:
+            return []
+            
         return [
             {
                 "rank": rank,

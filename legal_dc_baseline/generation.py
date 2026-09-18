@@ -1,5 +1,3 @@
-#/legal_dc_baseline/generation.py
-
 """A local, configurable replacement for Legal-DC's external Chinese generators."""
 
 import torch
@@ -8,11 +6,6 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 class LocalGenerator:
     def __init__(self, model_name: str, max_new_tokens: int, device: str | None) -> None:
-        """Load an encoder-decoder generator without the deprecated pipeline alias.
-
-        Transformers 5 removed the ``text2text-generation`` pipeline task.  Loading
-        FLAN-T5 through its explicit AutoModel API works in both Transformers 4 and 5.
-        """
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
@@ -32,17 +25,22 @@ class LocalGenerator:
         )
         return (
             "You are a legal consultation assistant. Answer only from the supplied Constitution "
-            "passages. If the passages do not support an answer, say so. Give a concise answer.\n\n"
+            "passages. If the passages do not support an answer or are irrelevant, explicitly state that the provided context does not contain sufficient legal evidence to answer.\n\n"
             f"Passages:\n{evidence}\n\nQuestion: {query}\nAnswer:"
         )
 
     def answer(self, query: str, passages: list[dict]) -> str:
+        # Fallback if no passages are passed or filtered out by threshold
+        if not passages:
+            return "The retrieved constitutional passages do not contain information relevant to this query."
+
         inputs = self.tokenizer(
             self.prompt(query, passages),
             return_tensors="pt",
             truncation=True,
             max_length=self.max_input_tokens,
         ).to(self.device)
+        
         with torch.inference_mode():
             generated_ids = self.model.generate(
                 **inputs,
